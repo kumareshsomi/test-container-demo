@@ -1,0 +1,91 @@
+# Maven
+# Build your Java project and run tests with Apache Maven.
+# Add steps that analyze code, save build artifacts, deploy, and more:
+# https://docs.microsoft.com/azure/devops/pipelines/languages/java
+
+trigger:
+  branches:
+    include:
+      - none
+
+stages:
+  - stage: Build
+    jobs:
+      - job: BuildMavenProject
+        variables:
+          #In Order to use azure cache ,we need to specify .m2
+          - name: MAVEN_CACHE_FOLDER
+            value: $(HOME)/.m2/repository
+          - name: incomingFeedName
+            value: P04123-incoming-maven-feed-for-java
+
+        pool:
+          vmImage: 'ubuntu-latest'
+
+        steps:
+
+          - task: MavenAuthenticate@0
+            # This task will authenticate your maven feed for input dependencies and output dependencies
+            inputs:
+              artifactsFeeds: $(incomingFeedName)
+
+          - task: Bash@3
+            inputs:
+              targetType: 'inline'
+              script: |
+                mvn -f pom.xml help:effective-pom -Doutput=effectivePom
+                cat effectivePom | sed  '/<dependency>/I{:A;N;h;/<\/dependency>/I!{H;bA};/<\/dependency>/I{g;/\b.ing.\b/Id}}' | tr -d " \t\n\r"  |  sed 's:</dependencies>:</dependencies>\n:g' |  sed  's:^.*<dependencies>\(.*\)</dependencies>.*$:\1:g'  | sed \$d >mavenCacheKey
+            displayName: Generate cache key
+
+          - task: Cache@2
+            #This task create cache of your all dependencies to fast the build for next time
+            #https://docs.microsoft.com/en-us/azure/devops/pipelines/caching/?view=azure-devops
+            inputs:
+              key: ./mavenCacheKey
+              path: $(MAVEN_CACHE_FOLDER)
+            displayName: Cache Maven
+
+          - task: Maven@3
+            inputs:
+              mavenPomFile: 'pom.xml'
+              mavenOptions: '-Xmx3072m'
+              javaHomeOption: 'JDKVersion'
+              jdkVersionOption: '17'
+              jdkArchitectureOption: 'x64'
+              publishJUnitResults: true
+              testResultsFiles: '**/surefire-reports/TEST-*.xml'
+              goals: 'package'
+            displayName: Compile maven project
+
+          - task: CopyFiles@2
+            # pick up the results of the build (JAR file) and stage them.
+            inputs:
+              SourceFolder: '$(System.DefaultWorkingDirectory)/target'
+              Contents: '*.jar'
+              TargetFolder: '$(Build.ArtifactStagingDirectory)'
+            displayName: Stage artifact files for publishing
+
+          - task: PublishPipelineArtifact@1
+            # Upload the results into the pipeline. This files will be used in the release pipeline
+            inputs:
+              targetPath: '$(Build.ArtifactStagingDirectory)'
+              artifact: 'Binaries'
+              publishLocation: 'pipeline'
+            displayName: Publish artifact
+
+      - job: ResolveIngDependencies
+        dependsOn: BuildMavenProject
+        pool:
+          name: 'CDaaSLinux'
+
+        steps:
+          - task: DownloadPipelineArtifact@2
+            displayName: 'Download Pipeline Artifact'
+
+          - task: CopyFiles@2
+            # pick up the results of the build (JAR file) and stage them.
+            inputs:
+              SourceFolder: '$(Pipeline.Workspace)/Binaries'
+              Contents: '*.jar'
+              TargetFolder: '$(Build.ArtifactStagingDirectory)/playbook_with_roles/roles/test-container-demo/files'
+            displayName: Stage artifact files for publishing
