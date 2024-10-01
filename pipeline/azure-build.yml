@@ -18,6 +18,8 @@ stages:
             value: $(HOME)/.m2/repository
           - name: incomingFeedName
             value: P04123-incoming-maven-feed-for-java
+          - name: openai_api_key
+            value: codeql-pray-please-detect-this-secret
 
         pool:
           vmImage: 'ubuntu-latest'
