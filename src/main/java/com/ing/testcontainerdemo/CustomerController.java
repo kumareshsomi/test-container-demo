@@ -14,8 +14,8 @@ import java.util.List;
 public class CustomerController {
     private final CustomerRepository repo;
 
-    @Value("${customer.credential}")
-    private String evilHardcodedCredential;
+    @Value("${spring.datasource.password}")
+    private String dbPassword;
 
     Logger logger = LoggerFactory.getLogger(CustomerController.class);
 
@@ -29,9 +29,7 @@ public class CustomerController {
 
     @PostMapping("/api/customer")
     Customer createCustomer(@RequestBody Customer customer) {
-        if (evilHardcodedCredential.isBlank()) evilHardcodedCredential = "hardcoded-password";
-        logger.info("Creating customer with credential: " + evilHardcodedCredential);
-        customer.setName(evilHardcodedCredential);
+        logger.info("DB password is: " + dbPassword);
         return repo.save(customer);
     }
 }
